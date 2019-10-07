@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import config as cfg
 import text_processing as tp
-import mumu
+# import mumu
 import telebot
 import time
 import datetime
@@ -38,20 +38,20 @@ def send_welcome(message):
     bot.send_message(cid, cfg.hello_msg)
 
 
-# меню в муму
-@bot.message_handler(commands=['chto_v_mumu'])
-@cfg.loglog(command='chto_v_mumu', type='message')
-@retrying.retry(stop_max_attempt_number=cfg.max_att, wait_random_min=cfg.w_min, wait_random_max=cfg.w_max)
-def send_mumu(message):
-    cid = message.chat.id
-    bot.send_chat_action(cid, 'typing')
-    week_day = datetime.datetime.today().weekday()
-    lunches = mumu.lunches(week_day)
+# # меню в муму
+# @bot.message_handler(commands=['chto_v_mumu'])
+# @cfg.loglog(command='chto_v_mumu', type='message')
+# @retrying.retry(stop_max_attempt_number=cfg.max_att, wait_random_min=cfg.w_min, wait_random_max=cfg.w_max)
+# def send_mumu(message):
+#     cid = message.chat.id
+#     bot.send_chat_action(cid, 'typing')
+#     week_day = datetime.datetime.today().weekday()
+#     lunches = mumu.lunches(week_day)
 
-    bot.send_message(cid, lunches[0][0])
-    bot.send_message(cid, lunches[0][1])
-    bot.send_message(cid, lunches[1][0])
-    bot.send_message(cid, lunches[1][1])
+#     bot.send_message(cid, lunches[0][0])
+#     bot.send_message(cid, lunches[0][1])
+#     bot.send_message(cid, lunches[1][0])
+#     bot.send_message(cid, lunches[1][1])
 
 
 # регистрируем человека в списке участников чата по его запросу
@@ -381,6 +381,33 @@ def meme(message):
 #     print(message.sticker.file_id)
 #     cid = message.chat.id
 #     bot.send_sticker(cid, random.choice(cfg.sticker_var))
+
+
+# nsfw print function
+def nsfw_print(message):
+    bot.send_sticker(message.chat.id, cfg.sticker_dog_left)
+    bot.send_message(message.chat.id, '!!! NOT SAFE FOR WORK !!!\n' * 3)
+    bot.send_sticker(message.chat.id, random.choice(cfg.sticker_nsfw))
+    bot.send_message(message.chat.id, '!!! NOT SAFE FOR WORK !!!\n' * 3)
+    bot.send_sticker(message.chat.id, cfg.sticker_dog_right)
+
+
+# nsfw command
+@bot.message_handler(commands=['nsfw'])
+@cfg.loglog(command='nsfw_text', type='message')
+@retrying.retry(stop_max_attempt_number=cfg.max_att, wait_random_min=cfg.w_min, wait_random_max=cfg.w_max)
+def nsfw_text(message):
+    nsfw_print(message)
+
+
+# nsfw in photo/video
+@bot.message_handler(content_types=["photo", "video"])
+@cfg.loglog(command='nsfw_caption', type='message')
+@retrying.retry(stop_max_attempt_number=cfg.max_att, wait_random_min=cfg.w_min, wait_random_max=cfg.w_max)
+def nsfw_caption(message):
+    if message.caption is not None:
+        if message.caption.find('/nsfw') != -1:
+            nsfw_print(message)
 
 
 @bot.message_handler(content_types=["text"])
