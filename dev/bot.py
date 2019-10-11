@@ -17,10 +17,12 @@ bot = telebot.TeleBot(cfg.token)
 
 # week_day = datetime.datetime.today().weekday()
 
-# определяем дефолтное время
-cfg.dinner_time = cfg.dinner_default_time
-cfg.dinner_time = datetime.timedelta(hours=cfg.dinner_time[0], minutes=cfg.dinner_time[1])
-cfg.show_din_time = str(cfg.dinner_time)[:-3]
+# определяем время во всех чатах
+dinner_default_time = db.select_default_time_setting()
+# считаем сумму голосов участников во всех чатах
+# TODO: по крону обнулять эти переменную в полночь
+dinner_vote = db.sql_exec(db.sel_election_text) 
+dinner_vote_sum = dict()
 
 # таймеры
 # evt.dinner_time_timer(bot)
@@ -117,7 +119,10 @@ def telegram_polling():
 def send_welcome(message):
     cid = message.chat.id
     bot.send_message(cid, cfg.hello_msg)
-
+    #инициируем настройки по умолчанию
+    db.default_settings(cid)
+    #пересчитываем в оперативке дефолтное время для чатов
+    dinner_default_time = db.select_default_time_setting()
 
 # # меню в муму
 # @bot.message_handler(commands=['chto_v_mumu'])
@@ -510,6 +515,47 @@ def nsfw_caption(message):
         if message.caption.find('/nsfw') != -1:
             nsfw_print(message)
 
+# settings
+@bot.message_handler(commands=['settings'])
+@cfg.loglog(command='settings', type='message')
+@retrying.retry(stop_max_attempt_number=cfg.max_att, wait_random_min=cfg.w_min, wait_random_max=cfg.w_max)
+def settings(message):
+    cid = message.chat.id
+    bot.send_message(cid, cfg.settings_msg)
+    
+# update time
+@bot.message_handler(commands=['settings_default_time'])
+@cfg.loglog(command='settings_default_time', type='message')
+@retrying.retry(stop_max_attempt_number=cfg.max_att, wait_random_min=cfg.w_min, wait_random_max=cfg.w_max)
+def settings_default_time(message):
+    cid = message.chat.id
+    try:
+        settings_query = message.text.strip().split()
+        time = settings_query[1].split(":")
+        db.update_time_setting(cid,time[0],time[1])
+        dinner_default_time = db.select_default_time_setting()
+        bot.send_message(cid, 'Время обеда по умолчанию изменено, новое значение: ' + time[0] + ':' + time[1])
+    except Exception:
+        print('***WARNING: Incorrect command usage settings_default_time***')
+        print('Exception text: ' + str(e))
+        bot.send_message(cid, 'Неправильное использование команды, формат ввода: /settings_default_time HH:MM')
+
+# update deviation
+@bot.message_handler(commands=['settings_default_deviation'])
+@cfg.loglog(command='settings_default_deviation', type='message')
+@retrying.retry(stop_max_attempt_number=cfg.max_att, wait_random_min=cfg.w_min, wait_random_max=cfg.w_max)
+def settings_default_deviation(message):
+    #TODO
+    cid = message.chat.id
+    try:
+        minutes = int(message.text.strip().split()[1])
+        db.update_deviation_setting(cid,minutes)
+        #TODO: пересчёт votemax 
+        bot.send_message(cid, 'Время отклонения от обеда по умолчанию изменено, новое значение: ' + minutes)
+    except Exception:
+        print('***WARNING: Incorrect command usage settings_default_deviation***')
+        print('Exception text: ' + str(e))
+        bot.send_message(cid, 'Неправильное использование команды, формат ввода: /settings_default_deviation MM')
 
 @bot.message_handler(content_types=["text"])
 @cfg.loglog(command='text_parser', type='message')
@@ -522,7 +568,7 @@ def text_parser(message):
     # hour_now = time.localtime().tm_hour
     cid = message.chat.id
     user_id = message.from_user.id
-
+    
     if cid in cfg.subscribed_chats:
         # # лол кек ахахаха детектор
         if tp.lol_kek_detector(message.text) is True:
@@ -563,15 +609,19 @@ def text_parser(message):
                 # elec_time = datetime.timedelta(minutes=din_elec)
                 # cfg.dinner_time += elec_time
                 final_elec_time = datetime.timedelta(minutes=final_elec_time)
-                cfg.dinner_time += final_elec_time
-
+                #считаем сумму голосов отдельно от времени
+                try:
+                    dinner_vote_sum[cid] += final_elec_time
+                except KeyError:
+                    dinner_vote_sum[cid] = final_elec_time
+                    
                 additional_msg = ''
                 if penalty_time != 0:
                     additional_msg = 'с учётом штрафов '
 
                 # голосование или переголосование
                 if int(user[0][2]) == 0:
-                    bot.reply_to(message, cfg.vote_msg + additional_msg + str(cfg.dinner_time)[:-3])
+                    bot.reply_to(message, cfg.vote_msg + additional_msg + str(dinner_default_time[cid] + dinner_vote_sum[cid])[:-3])
                 else:
                     final_elec_time = 0
                     prev_din_elec = int(user[0][2])
@@ -590,22 +640,12 @@ def text_parser(message):
                     # elec_time = datetime.timedelta(minutes=int(user[0][2]))
                     # cfg.dinner_time -= elec_time
                     final_elec_time = datetime.timedelta(minutes=final_elec_time)
-                    cfg.dinner_time -= final_elec_time
-                    bot.reply_to(message, cfg.revote_msg + additional_msg + str(cfg.dinner_time)[:-3])
+                    dinner_vote_sum[cid] -= final_elec_time
+                    bot.reply_to(message, cfg.revote_msg + additional_msg + str(dinner_default_time[cid] + dinner_vote_sum[cid])[:-3])
 
-                cfg.show_din_time = str(cfg.dinner_time)[:-3]
+                cfg.show_din_time = str(dinner_default_time[cid] + dinner_vote_sum[cid])[:-3]
                 print('Время обеда', cfg.show_din_time)
                 db.sql_exec(db.upd_election_elec_text, [din_elec, cid, user_id])
-
-        # # понеделбник - денб без мягкого знака
-        # ТОЛЬКО ДЛЯ ТЕСТИРОВАНИЯ!!!
-        # if tp.soft_sign(message.text) is True:
-        # if week_day == 0 and hour_msg < 12 and tp.soft_sign(message.text) is True:
-        #     print('##########', datetime.datetime.now(), 'soft_sign')
-
-        #     bot.reply_to(message, 'ШТРАФ')
-        #     db.sql_exec(db.upd_election_penalty_B_text, [cid, user_id])
-        #     print('ШТРАФ')
 
         print('##########', datetime.datetime.now(), '\n')
 
