@@ -19,17 +19,32 @@ def lol_kek_detector(msg):
     else:
         return True
 
-
-def dinner_election(msg):
+# проверяем валидность голоса за обед
+def dinner_election(msg,cid):
     res = re.findall('^[+|-][0-9]{1,2}$', msg)
     if res == []:
         return False
     else:
-        if abs(int(res[0])) <= cfg.dinner_max_plusminus_time:
+        if abs(int(res[0])) <= cfg.settings[cid]['max_deviation']:
             return int(res[0])
         else:
             return False
 
+# проверяем валидность времени (настройка дефолтного времени обеда)
+def time_checker(msg):
+    res = re.match(r'^([01]?[0-9]|2[0-3]):([0-5][0-9])$', msg)
+    if res is None:
+        return False
+    else:
+        return True
+
+# проверяем валидность минут (настройка макс.отклонения)
+def minute_checker(msg):
+    res = re.match(r'^([0-9]|([1-5][0-9]))$', msg)
+    if res is None:
+        return False
+    else:
+        return True
 
 # print(soft_sign('так \n\nсказатЬ'))
 # print(lol_kek_detector('кек'))

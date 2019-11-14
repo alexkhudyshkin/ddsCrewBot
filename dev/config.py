@@ -15,6 +15,7 @@ hello_msg = '''Привет! Я бот для чата DDS. Если тебе э
 /coin - подбросить монетку
 /dice - подбросить кубик
 /ball - магический шар
+/vote N - проголосовать за время обеда
 /dinner - показать время обеда
 /penalty - показать текущие штрафы
 /penalty @Username N - поставить штраф
@@ -28,13 +29,17 @@ hello_msg = '''Привет! Я бот для чата DDS. Если тебе э
 /unsubscribe - отписаться от рассылки @all
 /admin_subscribe_chat - подписать чат на чтение сообщений ботом и рассылки уведомлений
 /admin_unsubscribe_chat - отписать чат от чтения сообщений ботом и рассылки уведомлений
-/settings - настройки бота (время обеда и максимальное отклонение)
+/settings - настройки бота
 '''
 
 settings_msg = '''Доступные настройки:
 /settings_default_time HH:MM - время обеда по умолчанию
 /settings_max_deviation MM - максимальное отклонение от времени обеда в минутах
+/settings_autodetect_vote on/off - управление автоматическим чтением голосов в чате
+/settings_lolkek on/off - управление реакцией бота на лол кек в чате
+/settings_voronkov on/off - управление напоминаниями от Воронкова 
 '''
+# TODO: /settings_pidor on/off - управление встроенным пидором
 
 # название базы данных пользователей в чатах
 db_name = 'bot_database.db'
@@ -90,10 +95,26 @@ no_member = '''Я не нашёл {} в базе...
 Проверь написание ника!
 Ну, или может быть этот человек ещё не подписался?'''
 
+# ошибки команд
+err_wrong_cmd = "Ошибка: Неправильное использование команды, формат ввода: "
+err_time_limit = "Ошибка: Максимально возможное время обеда превышает одни сутки. Измените время обеда по умолчанию или среднее время отклонения."
 
 # дефолтное время обеда (часы, минуты)
 dinner_default_time = (12, 45)
-dinner_max_plusminus_time = 25
+# дефолтное время отклонения от обеда
+dinner_default_plusminus_time = 25
+
+# дефолтные флаги
+autodetect_vote_default = 1
+lol_kek_default = 1
+voronkov_default = 0
+pidor_default = 0
+
+# сумма голосов в чате
+dinner_vote_sum = dict()
+
+# определяем настройки во всех чатах
+settings = db.select_settings()
 
 # список чатов, чьи сообщения бот читает
 subscribed_chats = []
@@ -150,7 +171,7 @@ ball_var = ['Бесспорно', 'Предрешено', 'Никаких сом
             ]
 
 # переменная для показа времени
-show_din_time = ''
+show_din_time = dict()
 
 # текст "доброе утро"
 gm_text = ['С добрым утром, работяги!', 'Мир, труд, май!', 'Ммм... Работка!', 'Нада роботац!']
@@ -231,6 +252,16 @@ week_rus = {
     6: '-'
 }
 
+# словарь флаговых настроек
+settings_dict = { \
+    "settings_autodetect_vote": "autodetect_vote_flg" \
+    ,"settings_lolkek": "lol_kek_flg" \
+    ,"settings_voronkov": "voronkov_flg" \
+    ,"settings_pidor": "pidor_flg"}
+    
+# словарь переключения настроек
+flg_dict = {"on": 1, "off": 0}
+flg_rus = {"on:": " активирована", "off": " деактивирована"}
 
 # функция для повторения команды бота при выкидывании исключения
 def retry_bot_command(command, *args):

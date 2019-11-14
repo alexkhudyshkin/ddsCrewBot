@@ -70,7 +70,11 @@ ct_settings_text = """CREATE TABLE IF NOT EXISTS SETTINGS
             chat_id integer,
             default_time_hour integer,
             default_time_minute integer,
-            default_deviation integer
+            max_deviation integer,
+            autodetect_vote_flg integer,
+            lol_kek_flg integer,
+            voronkov_flg integer,
+            pidor_flg integer
             );"""
 
 ins_lj_participant_election_text = """INSERT INTO ELECTION
@@ -203,7 +207,7 @@ def is_pidor(chat_id,user_id):
 
 #вставка настроек по умолчанию
 check_if_settings_exist_text = """SELECT 1 FROM SETTINGS WHERE chat_id = ?;"""
-ins_default_settings_text = """INSERT INTO SETTINGS VALUES (?,?,?,?);"""
+ins_default_settings_text = """INSERT INTO SETTINGS VALUES (?,?,?,?,?,?,?);"""
 @cfg.loglog(command='default_settings', type='settings')
 def default_settings(chat_id):
     # не добавляем дубли
@@ -213,7 +217,15 @@ def default_settings(chat_id):
         # добавляем в базу настройки времени по умолчанию
         db = sql.connect(cfg.db_name)
         cursor = db.cursor()
-        cursor.execute(ins_default_settings_text, [chat_id, cfg.dinner_default_time[0], cfg.dinner_default_time[1], cfg.dinner_max_plusminus_time])
+        cursor.execute(ins_default_settings_text, \
+                       [chat_id, \
+                       cfg.dinner_default_time[0], \
+                       cfg.dinner_default_time[1], \
+                       cfg.dinner_default_plusminus_time, \
+                       cfg.autodetect_vote_default, \
+                       cfg.lol_kek_default, \
+                       cfg.voronkov_default, \
+                       cfg.pidor_default] )
         db.commit()
 
 #обновление среднего времени
@@ -224,37 +236,56 @@ update_time_setting_text = """UPDATE SETTINGS
 def update_time_setting(chat_id,hour,minute):
     db = sql.connect(cfg.db_name)
     cursor = db.cursor()
-    cursor.execute(update_time_setting_text, [chat_id, hour, minute])
+    cursor.execute(update_time_setting_text, [hour, minute, chat_id])
     db.commit()
 
 #обновление времени отклонения
 update_deviation_setting_text = """UPDATE SETTINGS 
-                           SET default_deviation = ? 
+                           SET max_deviation = ? 
                            WHERE chat_id = ?; """
 def update_deviation_setting(chat_id,minutes):
     db = sql.connect(cfg.db_name)
     cursor = db.cursor()
-    cursor.execute(update_deviation_setting_text, [chat_id, minutes])
+    cursor.execute(update_deviation_setting_text, [minutes, chat_id])
     db.commit()
 
-# вытаскиваем время по умолчанию в чатах
-select_default_time_setting_text = """SELECT chat_id, default_time_hour, default_time_minute
-                                FROM SETTINGS; """
-def select_default_time_setting():
+#обновление флаговых настроек
+update_flg_setting_text = "UPDATE SETTINGS SET {} = {} WHERE chat_id = {};"
+def update_flg_setting(chat_id,setting,flg):
     try:
-        din_time = dict()
         db = sql.connect(cfg.db_name)
         cursor = db.cursor()
-        cursor.execute(select_default_time_setting_text)
+        if setting in cfg.settings_dict and flg in cfg.flg_dict:
+            cursor.execute(update_flg_setting_text.format(cfg.settings_dict[setting], cfg.flg_dict[flg], chat_id))
+            db.commit()
+    except Exception as e:
+        print('***ERROR: update_flg_setting failed!***')
+        print('Exception text: ' + str(e))
+
+# вытаскиваем настройки по умолчанию в чатах
+select_settings_text = """SELECT chat_id, default_time_hour, default_time_minute, 
+                  max_deviation, autodetect_vote_flg, lol_kek_flg, voronkov_flg, pidor_flg
+                  FROM SETTINGS; """
+def select_settings():
+    try:
+        settings = dict()
+        db = sql.connect(cfg.db_name)
+        cursor = db.cursor()
+        cursor.execute(select_settings_text)
         res = cursor.fetchall()
         for i in range(len(res)):
-            din_time[res[i][0]] = datetime.timedelta(hours=res[i][1], minutes=res[i][2]) 
-        return din_time
+            settings[res[i][0]] = {"default_dinner_time": datetime.timedelta(hours=res[i][1], minutes=res[i][2]) \
+                                    ,"max_deviation": res[i][3] \
+                                    ,"autodetect_vote": res[i][4] \
+                                    ,"lol_kek": res[i][5] \
+                                    ,"voronkov": res[i][6] \
+                                    ,"pidor": res[i][7] }
+        return settings
     except Exception as e: 
-        print('***ERROR: select_default_time_setting failed!***')
+        print('***ERROR: select_settings failed!***')
         print('Exception text: ' + str(e))
         return 'ERROR!'
-
+        
 # создать таблицу
 @cfg.loglog(command='create_table', type='ct')
 def create_table():
