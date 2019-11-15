@@ -98,6 +98,10 @@ no_member = '''Я не нашёл {} в базе...
 # ошибки команд
 err_wrong_cmd = "Ошибка: Неправильное использование команды, формат ввода: "
 err_time_limit = "Ошибка: Максимально возможное время обеда превышает одни сутки. Измените время обеда по умолчанию или среднее время отклонения."
+too_late_err = "Слишком поздно для голосования за время обеда!"
+
+# информация о текущем значении настройки
+curr_value_info = "Текущее значение настройки "
 
 # дефолтное время обеда (часы, минуты)
 dinner_default_time = (12, 45)
@@ -110,11 +114,8 @@ lol_kek_default = 1
 voronkov_default = 0
 pidor_default = 0
 
-# сумма голосов в чате
-dinner_vote_sum = dict()
-
-# определяем настройки во всех чатах
-settings = db.select_settings()
+# настройки во всех чатах
+settings = dict()
 
 # список чатов, чьи сообщения бот читает
 subscribed_chats = []
@@ -253,15 +254,24 @@ week_rus = {
 }
 
 # словарь флаговых настроек
-settings_dict = { \
-    "settings_autodetect_vote": "autodetect_vote_flg" \
-    ,"settings_lolkek": "lol_kek_flg" \
-    ,"settings_voronkov": "voronkov_flg" \
-    ,"settings_pidor": "pidor_flg"}
+settings_todb_dict = { \
+    "/settings_autodetect_vote": "autodetect_vote_flg" \
+    ,"/settings_lolkek": "lol_kek_flg" \
+    ,"/settings_voronkov": "voronkov_flg" \
+    ,"/settings_pidor": "pidor_flg"}
+
+settings_tovar_dict = { \
+    "/settings_default_time": "default_dinner_time"
+    ,"/settings_max_deviation": "max_deviation"
+    ,"/settings_autodetect_vote": "autodetect_vote" \
+    ,"/settings_lolkek": "lol_kek" \
+    ,"/settings_voronkov": "voronkov" \
+    ,"/settings_pidor": "pidor"}
     
 # словарь переключения настроек
 flg_dict = {"on": 1, "off": 0}
-flg_rus = {"on:": " активирована", "off": " деактивирована"}
+flg_rus = {"on": " <b>активирована</b>!", "off": " <b>деактивирована</b>!"}
+flg_check = {1: "<b>активирована</b>.", 0: "<b>деактивирована</b>."}
 
 # функция для повторения команды бота при выкидывании исключения
 def retry_bot_command(command, *args):

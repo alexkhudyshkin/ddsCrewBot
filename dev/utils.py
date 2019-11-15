@@ -4,13 +4,13 @@ import text_processing as tp
 import time
 import datetime
 import database as db
-
-dinner_vote_sum = dict()
+import random
 
 # обновить глобальную переменную с временем обеда
 @cfg.loglog(command='upd_din_time', type='bot')
 def upd_din_time(cid, clear=False):
-    # очищаем время обеда в конце дня
+    global dinner_vote_sum
+    # очищаем время голосов за обед в конце дня
     if clear:
         dinner_vote_sum = dict()
     # пересчитываем время обеда в глобальной переменной
@@ -43,7 +43,7 @@ def vote_func(cid, user_id, vote_chat, bot, message):
         if sign * final_elec_time < 0:
             final_elec_time = 0
         
-        final_elec_time = datetime.timedelta(minutes=final_elec_time)
+        #final_elec_time = datetime.timedelta(minutes=final_elec_time)
         #считаем сумму голосов отдельно от времени
         dinner_vote_sum[cid] = dinner_vote_sum.get(cid,0) + final_elec_time
             
@@ -71,7 +71,7 @@ def vote_func(cid, user_id, vote_chat, bot, message):
             if sign * final_elec_time < 0:
                 final_elec_time = 0
 
-            final_elec_time = datetime.timedelta(minutes=final_elec_time)
+            #final_elec_time = datetime.timedelta(minutes=final_elec_time)
             # считаем сумму голосов отдельно от времени обеда
             dinner_vote_sum[cid] -= final_elec_time
             # обновляем итоговое время обеда
@@ -84,7 +84,7 @@ def vote_func(cid, user_id, vote_chat, bot, message):
 # пересчитать время обеда в оперативке после перезагрузки бота
 @cfg.loglog(command='vote_recalc', type='bot')
 def vote_recalc():
-    dinner_vote = db.sql_exec(db.sel_all_election_text)
+    dinner_vote = db.sql_exec(db.sel_all_election_text, [])
     for i in range(len(dinner_vote)):
         cid = dinner_vote[i][0]
         user_id = dinner_vote[i][1]
@@ -103,7 +103,7 @@ def vote_recalc():
         if sign * final_elec_time < 0:
             final_elec_time = 0
         
-        final_elec_time = datetime.timedelta(minutes=final_elec_time)
+        #final_elec_time = datetime.timedelta(minutes=final_elec_time)
         # считаем сумму голосов отдельно от времени обеда
         dinner_vote_sum[cid] = dinner_vote_sum.get(cid,0) + final_elec_time
         # обновляем итоговое время обеда
@@ -111,12 +111,13 @@ def vote_recalc():
 
 # nsfw print function
 @cfg.loglog(command='nsfw_print', type='bot')
-def nsfw_print(message):
+def nsfw_print(message,bot):
     bot.send_sticker(message.chat.id, cfg.sticker_dog_left)
     bot.send_message(message.chat.id, '!!! NOT SAFE FOR WORK !!!\n' * 3)
     bot.send_sticker(message.chat.id, random.choice(cfg.sticker_nsfw))
     bot.send_message(message.chat.id, '!!! NOT SAFE FOR WORK !!!\n' * 3)
     bot.send_sticker(message.chat.id, cfg.sticker_dog_right)
 
+dinner_vote_sum = dict()
 # пересчитываем сумму голосов в оперативке в случае перезагрузки бота в течение дня
 vote_recalc()

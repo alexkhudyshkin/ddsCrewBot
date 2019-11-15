@@ -2,6 +2,7 @@
 
 import sqlite3 as sql
 import config as cfg
+import datetime
 
 ct_text = """CREATE TABLE IF NOT EXISTS PARTICIPANT
             (
@@ -79,7 +80,7 @@ ct_settings_text = """CREATE TABLE IF NOT EXISTS SETTINGS
 
 ins_lj_participant_election_text = """INSERT INTO ELECTION
             SELECT part.chat_id, part.participant_id,
-            cast(0 as integer) as elec_time, cast(0 as integer) as penalty_time
+            cast(0 as integer) as elec_time, cast(0 as integer) as penalty_time, cast(0 as integer) as minus_flg
             FROM
             PARTICIPANT as part LEFT JOIN ELECTION as elec
             on (part.chat_id = elec.chat_id and
@@ -110,6 +111,9 @@ sel_election_text = """SELECT * FROM ELECTION WHERE chat_id = ? and participant_
 
 # вытаскиваем текущие голоса и штрафы всех участников
 sel_all_election_text = """SELECT * FROM ELECTION; """
+
+# вытаскиваем чаты которые голосуют
+sel_chats_election_text = """SELECT DISTINCT chat_id FROM ELECTION; """
 
 upd_election_elec_text = """UPDATE ELECTION
             SET elec_time = ?
@@ -207,32 +211,37 @@ def is_pidor(chat_id,user_id):
 
 #вставка настроек по умолчанию
 check_if_settings_exist_text = """SELECT 1 FROM SETTINGS WHERE chat_id = ?;"""
-ins_default_settings_text = """INSERT INTO SETTINGS VALUES (?,?,?,?,?,?,?);"""
+ins_default_settings_text = """INSERT INTO SETTINGS VALUES (?,?,?,?,?,?,?,?);"""
 @cfg.loglog(command='default_settings', type='settings')
 def default_settings(chat_id):
-    # не добавляем дубли
-    if boolean_select(check_if_settings_exist_text, chat_id):
-        pass
-    else:
-        # добавляем в базу настройки времени по умолчанию
-        db = sql.connect(cfg.db_name)
-        cursor = db.cursor()
-        cursor.execute(ins_default_settings_text, \
-                       [chat_id, \
-                       cfg.dinner_default_time[0], \
-                       cfg.dinner_default_time[1], \
-                       cfg.dinner_default_plusminus_time, \
-                       cfg.autodetect_vote_default, \
-                       cfg.lol_kek_default, \
-                       cfg.voronkov_default, \
-                       cfg.pidor_default] )
-        db.commit()
+    try:
+        # не добавляем дубли
+        if boolean_select(check_if_settings_exist_text, chat_id):
+            pass
+        else:
+            # добавляем в базу настройки времени по умолчанию
+            db = sql.connect(cfg.db_name)
+            cursor = db.cursor()
+            cursor.execute(ins_default_settings_text, \
+                           [chat_id, \
+                           cfg.dinner_default_time[0], \
+                           cfg.dinner_default_time[1], \
+                           cfg.dinner_default_plusminus_time, \
+                           cfg.autodetect_vote_default, \
+                           cfg.lol_kek_default, \
+                           cfg.voronkov_default, \
+                           cfg.pidor_default] )
+            db.commit()
+    except Exception as e:
+        print('***ERROR: default_settings failed!***')
+        print('Exception text: ' + str(e))
 
 #обновление среднего времени
 update_time_setting_text = """UPDATE SETTINGS 
                            SET default_time_hour = ?, 
                            default_time_minute = ? 
                            WHERE chat_id = ?; """
+@cfg.loglog(command='update_time_setting', type='settings')
 def update_time_setting(chat_id,hour,minute):
     db = sql.connect(cfg.db_name)
     cursor = db.cursor()
@@ -243,6 +252,7 @@ def update_time_setting(chat_id,hour,minute):
 update_deviation_setting_text = """UPDATE SETTINGS 
                            SET max_deviation = ? 
                            WHERE chat_id = ?; """
+@cfg.loglog(command='update_deviation_setting', type='settings')
 def update_deviation_setting(chat_id,minutes):
     db = sql.connect(cfg.db_name)
     cursor = db.cursor()
@@ -251,12 +261,13 @@ def update_deviation_setting(chat_id,minutes):
 
 #обновление флаговых настроек
 update_flg_setting_text = "UPDATE SETTINGS SET {} = {} WHERE chat_id = {};"
+@cfg.loglog(command='update_flg_setting', type='settings')
 def update_flg_setting(chat_id,setting,flg):
     try:
         db = sql.connect(cfg.db_name)
         cursor = db.cursor()
-        if setting in cfg.settings_dict and flg in cfg.flg_dict:
-            cursor.execute(update_flg_setting_text.format(cfg.settings_dict[setting], cfg.flg_dict[flg], chat_id))
+        if setting in cfg.settings_todb_dict and flg in cfg.flg_dict:
+            cursor.execute(update_flg_setting_text.format(cfg.settings_todb_dict[setting], cfg.flg_dict[flg], chat_id))
             db.commit()
     except Exception as e:
         print('***ERROR: update_flg_setting failed!***')
@@ -275,7 +286,7 @@ def select_settings():
         res = cursor.fetchall()
         for i in range(len(res)):
             settings[res[i][0]] = {"default_dinner_time": datetime.timedelta(hours=res[i][1], minutes=res[i][2]) \
-                                    ,"max_deviation": res[i][3] \
+                                    ,"max_deviation": datetime.timedelta(minutes=res[i][3]) \
                                     ,"autodetect_vote": res[i][4] \
                                     ,"lol_kek": res[i][5] \
                                     ,"voronkov": res[i][6] \
@@ -303,6 +314,8 @@ def create_table():
     cursor.execute(ct_metadata_text)
     # таблица мемов
     cursor.execute(ct_meme_text)
+    # таблица настроек
+    cursor.execute(ct_settings_text)
     db.commit()
 
 

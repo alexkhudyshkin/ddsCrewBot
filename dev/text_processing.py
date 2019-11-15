@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import config as cfg
 import re
-
+import datetime
 
 # проверка на мягкий знак в сообщении
 def soft_sign(msg):
@@ -19,13 +19,16 @@ def lol_kek_detector(msg):
     else:
         return True
 
-# проверяем валидность голоса за обед
-def dinner_election(msg,cid):
-    res = re.findall('^[+|-][0-9]{1,2}$', msg)
+# проверяем валидность голоса за обед в автоматическом или ручном захвате
+def dinner_election(msg,cid,manual=False):
+    if manual:
+        res = re.findall('^[+|-]?[0-9]{1,2}$', msg)
+    else:
+        res = re.findall('^[+|-][0-9]{1,2}$', msg)
     if res == []:
         return False
     else:
-        if abs(int(res[0])) <= cfg.settings[cid]['max_deviation']:
+        if abs(int(res[0])) <= cfg.settings[cid]['max_deviation'].seconds//60:
             return int(res[0])
         else:
             return False
@@ -40,7 +43,7 @@ def time_checker(msg):
 
 # проверяем валидность минут (настройка макс.отклонения)
 def minute_checker(msg):
-    res = re.match(r'^([0-9]|([1-5][0-9]))$', msg)
+    res = re.match(r'^([0-9]|([1-9][0-9]))$', msg)
     if res is None:
         return False
     else:
