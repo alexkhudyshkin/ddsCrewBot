@@ -8,13 +8,17 @@ import random
 
 # обновить глобальную переменную с временем обеда
 @cfg.loglog(command='upd_din_time', type='bot')
-def upd_din_time(cid, clear=False):
+def upd_din_time(cid=0, clear=False):
+    # указываем на использование глобальной переменной, иначе не работает
     global dinner_vote_sum
-    # очищаем время голосов за обед в конце дня
     if clear:
-        dinner_vote_sum = dict()
-    # пересчитываем время обеда в глобальной переменной
-    cfg.show_din_time[cid] = str(cfg.settings[cid]['default_dinner_time'] + datetime.timedelta(minutes=dinner_vote_sum.get(cid,0)))[:-3]
+        # очищаем время голосов за обед в конце дня
+        for chats in cfg.show_din_time.keys():
+            dinner_vote_sum[chats] = 0
+            cfg.show_din_time[chats] = cfg.settings[chats]['default_dinner_time']
+    else:
+        # пересчитываем время обеда в глобальной переменной
+        cfg.show_din_time[cid] = str(cfg.settings[cid]['default_dinner_time'] + datetime.timedelta(minutes=dinner_vote_sum.get(cid,0)))[:-3]
 
 # вернуть время обеда в datetime
 @cfg.loglog(command='show_din_time', type='bot')
@@ -23,7 +27,9 @@ def show_din_time(cid):
 
 # обработка голоса за обед
 @cfg.loglog(command='vote_func', type='bot')
-def vote_func(cid, user_id, vote_chat, bot, message):
+def vote_func(vote_chat, bot, message):
+    cid = message.chat.id
+    user_id = message.from_user.id
     dinner_vote = db.sql_exec(db.sel_election_text, [cid, user_id])
     if len(dinner_vote) == 0:
         bot.reply_to(message, cfg.err_vote_msg)
@@ -111,12 +117,12 @@ def vote_recalc():
 
 # nsfw print function
 @cfg.loglog(command='nsfw_print', type='bot')
-def nsfw_print(message,bot):
-    bot.send_sticker(message.chat.id, cfg.sticker_dog_left)
-    bot.send_message(message.chat.id, '!!! NOT SAFE FOR WORK !!!\n' * 3)
-    bot.send_sticker(message.chat.id, random.choice(cfg.sticker_nsfw))
-    bot.send_message(message.chat.id, '!!! NOT SAFE FOR WORK !!!\n' * 3)
-    bot.send_sticker(message.chat.id, cfg.sticker_dog_right)
+def nsfw_print(cid,bot):
+    bot.send_sticker(cid, cfg.sticker_dog_left)
+    bot.send_message(cid, '!!! NOT SAFE FOR WORK !!!\n' * 3)
+    bot.send_sticker(cid, random.choice(cfg.sticker_nsfw))
+    bot.send_message(cid, '!!! NOT SAFE FOR WORK !!!\n' * 3)
+    bot.send_sticker(cid, cfg.sticker_dog_right)
 
 dinner_vote_sum = dict()
 # пересчитываем сумму голосов в оперативке в случае перезагрузки бота в течение дня

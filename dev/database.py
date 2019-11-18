@@ -49,13 +49,13 @@ ct_metadata_text = """CREATE TABLE IF NOT EXISTS METADATA
             is_success_flg integer
             );"""
 
-ct_meme_text = """CREATE TABLE IF NOT EXISTS MEME
-            (
-            chat_id integer,
-            name text,
-            type text,
-            value text
-            );"""
+# ct_meme_text = """CREATE TABLE IF NOT EXISTS MEME
+#             (
+#             chat_id integer,
+#             name text,
+#             type text,
+#             value text
+#             );"""
 
 ct_meme_text = """CREATE TABLE IF NOT EXISTS MEME
             (
@@ -158,7 +158,11 @@ upd_operation_meta_text = """UPDATE METADATA
             SET is_success_flg = ?
             WHERE id_rk = ?"""
 
-sel_meme_text = """SELECT * FROM MEME WHERE chat_id = ? AND name = ?;"""
+sel_meme_name_text = """SELECT meme_type, meme_value FROM MEME WHERE chat_id = ? AND meme_name = ?;"""
+
+sel_meme_id_text = """SELECT meme_type, meme_value FROM MEME WHERE chat_id = ? AND meme_id = ?;"""
+
+sel_meme_in_chat_text = """SELECT meme_id, meme_name FROM MEME WHERE chat_id = ?"""
 
 # ins_meme_text = """INSERT INTO MEME
 #             VALUES (?,?,?,?);"""
@@ -166,7 +170,13 @@ sel_meme_text = """SELECT * FROM MEME WHERE chat_id = ? AND name = ?;"""
 ins_meme_text = """INSERT INTO MEME
             VALUES (?,?,?,?,?);"""
 
-del_meme_text = """DELETE FROM MEME WHERE chat_id = ? AND name = ?;"""
+del_meme_name_text = """DELETE FROM MEME WHERE chat_id = ? AND meme_name = ?;"""
+
+del_meme_id_text = """DELETE FROM MEME WHERE chat_id = ? AND meme_id = ?;"""
+
+sel_max_meme_id_text = """SELECT max(meme_id) FROM MEME
+                          WHERE chat_id = ?
+                          group by chat_id"""
 
 #простая проверка в базе чего угодно с возвратом true/false
 @cfg.loglog(command='boolean_select', type='db_common')
