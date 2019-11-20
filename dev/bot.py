@@ -298,7 +298,7 @@ def sqlsql(message):
             res = db.sql_exec(sqlQuery, [])
             # print(str(res))
             resStr = '[]'
-            if res == 'ERROR!':
+            if res is None:
                 resStr = 'Ошибка в SQL запросе!'
             else:
                 for i in res:
@@ -503,12 +503,10 @@ def meme(message):
     if len(query) == 1:
         res = db.sql_exec(db.sel_meme_in_chat_text, [cid])
         if len(res) == 0:
-
             bot.send_message(cid, cfg.meme_dict_text['meme_no_memes'])
         else:
             resStr = 'Мемы, добавленные в ваш чат:\n'
             for i in res:
-
                 resStr += '*{}. {}*\n'.format(str(i[0]), str(i[1]))
             bot.send_message(cid, str(resStr), parse_mode='Markdown')
     elif len(query) == 2:
@@ -580,7 +578,7 @@ def settings(message):
 def settings_default_time(message):
     cid = message.chat.id
     try:
-        msg = message.text.strip().split()
+        msg = message.text.lower().strip().split()
         # если команда с собакой, обрезаем её до собаки
         if msg[0].find('@')>0:
             msg[0] = msg[0][:msg[0].find('@')]
@@ -618,7 +616,7 @@ def settings_default_time(message):
 def settings_max_deviation(message):
     cid = message.chat.id
     try:
-        msg = message.text.strip().split()
+        msg = message.text.lower().strip().split()
         # если команда с собакой, обрезаем её до собаки
         if msg[0].find('@')>0:
             msg[0] = msg[0][:msg[0].find('@')]        
@@ -651,7 +649,7 @@ def settings_max_deviation(message):
 def settings_flg(message):
     cid = message.chat.id
     try:
-        msg = message.text.strip().split()
+        msg = message.text.lower().strip().split()
         # если команда с собакой, обрезаем её до собаки
         if msg[0].find('@')>0:
             msg[0] = msg[0][:msg[0].find('@')]        

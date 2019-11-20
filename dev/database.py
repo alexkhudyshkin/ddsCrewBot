@@ -338,9 +338,10 @@ def sql_exec(exec_text, params):
         cursor.execute(exec_text, params)
         db.commit()
         return cursor.fetchall()
-    except Exception:
-        return 'ERROR!'
-
+    except Exception as e:
+        print('***ERROR: sql_exec failed!***')
+        print('Exception text: ' + str(e))
+        return None
 
 # очистка таблицы голосования, ТОЛЬКО ДЛЯ ТЕСТИРОВАНИЯ!!!
 # sql_exec(reset_election_time_text, [0])
