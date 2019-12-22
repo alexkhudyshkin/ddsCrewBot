@@ -226,9 +226,7 @@ ins_default_settings_text = """INSERT INTO SETTINGS VALUES (?,?,?,?,?,?,?,?);"""
 def default_settings(chat_id):
     try:
         # не добавляем дубли
-        if boolean_select(check_if_settings_exist_text, chat_id):
-            pass
-        else:
+        if not(boolean_select(check_if_settings_exist_text, chat_id)):
             # добавляем в базу настройки времени по умолчанию
             db = sql.connect(cfg.db_name)
             cursor = db.cursor()
@@ -251,37 +249,14 @@ update_time_setting_text = """UPDATE SETTINGS
                            SET default_time_hour = ?, 
                            default_time_minute = ? 
                            WHERE chat_id = ?; """
-@cfg.loglog(command='update_time_setting', type='settings')
-def update_time_setting(chat_id,hour,minute):
-    db = sql.connect(cfg.db_name)
-    cursor = db.cursor()
-    cursor.execute(update_time_setting_text, [hour, minute, chat_id])
-    db.commit()
 
 #обновление времени отклонения
 update_deviation_setting_text = """UPDATE SETTINGS 
                            SET max_deviation = ? 
                            WHERE chat_id = ?; """
-@cfg.loglog(command='update_deviation_setting', type='settings')
-def update_deviation_setting(chat_id,minutes):
-    db = sql.connect(cfg.db_name)
-    cursor = db.cursor()
-    cursor.execute(update_deviation_setting_text, [minutes, chat_id])
-    db.commit()
 
 #обновление флаговых настроек
 update_flg_setting_text = "UPDATE SETTINGS SET {} = {} WHERE chat_id = {};"
-@cfg.loglog(command='update_flg_setting', type='settings')
-def update_flg_setting(chat_id,setting,flg):
-    try:
-        db = sql.connect(cfg.db_name)
-        cursor = db.cursor()
-        if setting in cfg.settings_todb_dict and flg in cfg.flg_dict:
-            cursor.execute(update_flg_setting_text.format(cfg.settings_todb_dict[setting], cfg.flg_dict[flg], chat_id))
-            db.commit()
-    except Exception as e:
-        print('***ERROR: update_flg_setting failed!***')
-        print('Exception text: ' + str(e))
 
 # вытаскиваем настройки по умолчанию в чатах
 select_settings_text = """SELECT chat_id, default_time_hour, default_time_minute, 
@@ -428,6 +403,12 @@ if max_id_rk[0][0] is None:
     max_id_rk = [(0,)]
 cfg.max_id_rk = int(max_id_rk[0][0]) + 1
 
+# инициируем настройки в голосующих чатах
+chat_voters = sql_exec(sel_chats_election_text, [])
+for i in range(len(chat_voters)):
+    default_settings(chat_voters[i][0])
+# запоминаем настройки
+cfg.settings = select_settings()
 
 # db = sql.connect(cfg.db_name)
 # cursor = db.cursor()

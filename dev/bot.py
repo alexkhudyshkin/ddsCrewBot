@@ -2,15 +2,6 @@
 import config as cfg
 import text_processing as tp
 import database as db
-
-# этот кусок должен быть здесь, иначе импорты ниже не выполнятся
-# инициируем настройки в голосующих чатах
-chat_voters = db.sql_exec(db.sel_chats_election_text, [])
-for i in range(len(chat_voters)):
-    db.default_settings(chat_voters[i][0])
-# запоминаем настройки
-cfg.settings = db.select_settings()
-
 import telebot
 import time
 import datetime
@@ -602,7 +593,7 @@ def settings_default_time(message):
                 if cfg.show_din_time != old_din_time:
                     bot.send_message(cid, 'С учётом сдвига времени обеда по умолчанию, сегодня обедаем в: <b>' + cfg.show_din_time[cid] + '</b>.', parse_mode='HTML')
                 # записываем изменения в БД
-                db.update_time_setting(cid,time[0],time[1])
+                db.sql_exec(db.update_time_setting_text, [cid,time[0],time[1]])
         else:
             bot.send_message(cid, cfg.err_wrong_cmd + msg[0] + ' HH:MM')
     except Exception as e:
@@ -634,7 +625,7 @@ def settings_max_deviation(message):
                 cfg.settings[cid]['max_deviation'] = deviation
                 bot.send_message(cid, 'Максимальное время отклонения от обеда изменено, новое значение: <b>' + msg[1] + '</b> минут.', parse_mode='HTML')
                 # обновляем настройку в БД
-                db.update_deviation_setting(cid, int(msg[1]))
+                db.sql_exec(update_deviation_setting_text, [int(msg[1])])
                 # TODO: пересчёт votemax 
         else:
             bot.send_message(cid, cfg.err_wrong_cmd + msg[0] + ' MM')
@@ -657,12 +648,12 @@ def settings_flg(message):
         if len(msg) == 1:
             bot.send_message(cid, cfg.curr_value_info + cfg.settings_tovar_dict[msg[0]] + ': ' + cfg.flg_check[cfg.settings[cid][cfg.settings_tovar_dict[msg[0]]]], parse_mode='HTML')
         # проверяем корректность ввода
-        elif len(msg) == 2 and msg[1] in cfg.flg_rus:
+        elif len(msg) == 2 and msg[1] in cfg.flg_dict:
             # обновляем в оперативке
             cfg.settings[cid][cfg.settings_tovar_dict[msg[0]]] = cfg.flg_dict[msg[1]]
             bot.send_message(cid, 'Настройка ' + msg[0][10:] + cfg.flg_rus[msg[1]], parse_mode='HTML')
             # обновляем в БД
-            db.update_flg_setting(cid, msg[0], msg[1])
+            db.sql_exec(db.update_flg_setting_text.format(cfg.settings_todb_dict[msg[0]], cfg.flg_dict[msg[1]], cid), [])
         else:
             bot.send_message(cid, cfg.err_wrong_cmd + msg[0] + ' on/off')
     except Exception as e:
