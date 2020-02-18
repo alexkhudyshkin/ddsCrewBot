@@ -70,6 +70,10 @@ ct_meme_text = """CREATE TABLE IF NOT EXISTS MEME
             meme_value text
             );"""
 
+ins_settings_copy_text = '''INSERT INTO SETTINGS
+                SELECT ?, default_time_hour, default_time_minute, max_deviation,
+                       autodetect_vote_flg, lol_kek_flg, voronkov_flg, pidor_flg
+                FROM SETTING WHERE CHAT_ID = ?;'''
 
 ins_lj_participant_election_text = """INSERT INTO ELECTION
             SELECT part.chat_id, part.participant_id,
@@ -115,21 +119,11 @@ upd_election_penalty_text = """UPDATE ELECTION
             SET penalty_time = ?
             WHERE chat_id = ? and participant_id = ?;"""
 
-# upd_election_penalty_B_text = """UPDATE ELECTION
-#             SET penalty_B_time = penalty_B_time + 1
-#             WHERE chat_id = ? and participant_id = ?;"""
-
-# sel_election_penalty_B_text = """SELECT chat_id, participant_id, elec_time,
-#             (penalty_time + penalty_B_time) FROM ELECTION
-#             WHERE elec_time <> 0"""
-
 reset_election_time_text = """UPDATE ELECTION SET elec_time = ?;"""
 
-# reset_penalty_B_time_text = """UPDATE ELECTION SET penalty_B_time = ?;"""
-
 colect_election_hist_text = """INSERT INTO ELECTION_HIST
-            SELECT elec.chat_id, elec.participant_id, elec.elec_time, elec.penalty_time,
-            cast(? as text) FROM ELECTION as elc;"""
+            SELECT elec.chat_id, elec.participant_id, elec.elec_time, elec.penalty_time, elec.minus_flg,
+            cast(? as text) FROM ELECTION as elec;"""
 
 sel_nonvoted_users_text = """SELECT part.participant_username
             FROM ELECTION as elec JOIN PARTICIPANT as part
@@ -320,7 +314,8 @@ def select_settings():
     except Exception as e:
         print('***ERROR: select_settings failed!***')
         print('Exception text: ' + str(e))
-        return 'ERROR!'
+        return None
+
 
 # очистка таблицы голосования, ТОЛЬКО ДЛЯ ТЕСТИРОВАНИЯ!!!
 # sql_exec(reset_election_time_text, [0])
