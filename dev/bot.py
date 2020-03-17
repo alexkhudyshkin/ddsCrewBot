@@ -122,6 +122,7 @@ def start_bot(message):
     # инициируем настройки по умолчанию для новых чатов
     db.default_settings(cid)
     utils.upd_din_time(cid)
+    utils.vote_params_reset()
 
 
 # приветствие
@@ -162,6 +163,18 @@ def subscribe(message):
         bot.send_message(cid, cfg.err_subscribe_msg)
     else:
         bot.send_message(cid, cfg.subscribe_msg)
+        # если идёт время обеда
+        if utils.vote_time_check(cid) is None:
+            # и сегодня кто-то голосовал, то запретить голосовать
+            if db.sql_exec(db.check_chat_vote_text, [cid])[0][0] > 0:
+                bot.reply_to(message, cfg.vote_after_subscribe_text)
+                utils.dinner_minus(cid, user.id)
+            # иначе молча пересчитать максимумы с учётом нового участника
+            else:
+                utils.vote_params_chat_reset(cid, user.id)
+            # добавляем юзера в списки, связанные с обедом
+            if cfg.penalty[cid].get(user.username) is None:
+                cfg.penalty[cid][user.username] = 0
 
 
 # удаляем человека из списка участников чата по его запросу
@@ -172,8 +185,33 @@ def unsubscribe(message):
     cid = message.chat.id
     bot.send_chat_action(cid, 'typing')
     user_id = message.from_user.id
-    db.delete_from_participants(cid, user_id)
-    bot.send_message(cid, cfg.unsubscribe_msg)
+    username = message.from_user.username
+    if db.is_subscriber(cid, user_id):        
+        db.delete_from_participants(cid, user_id)
+        # минусуем человека, если он участвовал в голосовании
+        # если идёт время обеда
+        if utils.vote_time_check(cid) is None:
+            # и сегодня кто-то голосовал
+            if db.sql_exec(db.check_chat_vote_text, [cid])[0][0] > 0:    
+                # проверяем, что пользователь не голосовал до минуса
+                user_vote = db.sql_exec(db.sel_user_elec_text, [cid, user_id])[0][0]
+                if user_vote == 0:
+                    utils.dinner_minus(cid, user_id)
+                else:
+                    # если был голос до минуса, вычитаем его и показываем новое время
+                    utils.dinner_minus(cid, user_id, user_vote)
+                    bot.reply_to(message, cfg.vote_before_minus_text.format(cfg.show_din_time[cid]), parse_mode='HTML')
+            # иначе молча пересчитать максимумы без учёта ушедшего участника
+            else:
+                utils.vote_params_chat_reset(cid, user_id)                
+        bot.send_message(cid, cfg.unsubscribe_msg)
+        # зачищаем юзера в списках, связанных с обедом
+        if cfg.penalty[cid].get(username) is not None:
+            del cfg.penalty[cid][username]
+        if username in cfg.users_minus[cid]:
+            cfg.users_minus[cid].remove(username)
+    else:
+        bot.send_message(cid, cfg.unsubscribe_err_msg)
 
 
 # регистрируем чат в рассылки на сообщения ботом
@@ -300,6 +338,7 @@ def sqlsql(message):
 
 
 # показать/оставить штрафы
+# TODO: fix bug /unsubscribe + /subscribe и штрафа нет
 @bot.message_handler(commands=['penalty'])
 @cfg.loglog(command='penalty', type='message')
 @retrying.retry(stop_max_attempt_number=cfg.max_att, wait_random_min=cfg.w_min, wait_random_max=cfg.w_max)
@@ -590,7 +629,7 @@ def settings_max_deviation(message):
             if (deviation + chatSettings['default_dinner_time']).days > 0:
                 bot.send_message(cid, cfg.err_time_limit, parse_mode='HTML')
             elif chatSettings['max_deviation'] == deviation:
-                bot.send_message(cid, 'Новое отклонение совпадает с текущим.', parse_mode='HTML')
+                bot.send_message(cid, 'Ошибка: новое отклонение совпадает с текущим.', parse_mode='HTML')
             else:
                 # обновляем настройку в оперативке
                 cfg.settings[cid]['max_deviation'] = deviation
@@ -599,7 +638,8 @@ def settings_max_deviation(message):
                                  parse_mode='HTML')
                 # обновляем настройку в БД
                 db.sql_exec(db.update_deviation_setting_text, [int(msg[1]), cid])
-                # TODO: пересчёт votemax
+                # пересчёт votemax
+                utils.vote_max_calc(cid)
         else:
             bot.send_message(cid, cfg.err_wrong_cmd.format(msg[0] + ' MM'), parse_mode='HTML')
     except Exception as e:
@@ -628,7 +668,7 @@ def settings_election_end_hour(message):
             if new_elec_end_hour >= chatSettings['default_dinner_time'].seconds // 3600:
                 bot.send_message(cid, cfg.big_end_error, parse_mode='HTML')
             elif chatSettings['elec_end_hour'] == new_elec_end_hour:
-                bot.send_message(cid, 'Новое время окончания голосования совпадает с текущим.',
+                bot.send_message(cid, 'Ошибка: новое время окончания голосования совпадает с текущим.',
                                  parse_mode='HTML')
             else:
                 # обновляем настройку в оперативке
@@ -661,7 +701,7 @@ def settings_flg(message):
         # проверяем корректность ввода
         elif len(msg) == 2 and msg[1] in cfg.flg_dict:
             if utils.getSettings(cid, cfg.settings_tovar_dict[msg[0]]) == cfg.flg_dict[msg[1]]:
-                bot.send_message(cid, 'Новое значение совпадает с текущим.', parse_mode='HTML')
+                bot.send_message(cid, 'Ошибка: новое значение совпадает с текущим.', parse_mode='HTML')
             else:
                 # обновляем в оперативке
                 cfg.settings[cid][cfg.settings_tovar_dict[msg[0]]] = cfg.flg_dict[msg[1]]
@@ -683,18 +723,18 @@ def settings_flg(message):
 def vote_cmd(message):
     try:
         cid = message.chat.id
+        uid = message.from_user.id
         msg = message.text.strip().split()
         # проверка корректности ввода
         if len(msg) == 2 and tp.dinner_election(msg[1], cid, manual=True) is not False:
-            week_day = datetime.datetime.today().weekday()
-            hour_msg = time.localtime(message.date).tm_hour
             din_elec = int(msg[1])
             # проверяем что сегодня не выходной и время меньше чем час обеда в этом чате
-            if week_day not in (5, 6) and hour_msg < utils.getSettings(cid, 'elec_end_hour'):
+            vote_today_err = utils.user_vote_check(cid, uid)
+            if vote_today_err is None:
                 bot.send_chat_action(cid, 'typing')
                 utils.vote_func(din_elec, bot, message)
             else:
-                bot.reply_to(message, cfg.too_late_err)
+                bot.reply_to(message, vote_today_err)
         else:
             bot.send_message(cid, cfg.err_wrong_cmd.format('vote [+/-]NN'), parse_mode='HTML')
     except Exception as e:
@@ -728,36 +768,128 @@ def show_chat_id(message):
         print('Exception text: ' + str(e))
 
 
+# показать доступное время для голосования
+@bot.message_handler(commands=['maxvote'])
+@cfg.loglog(command='maxvote', type='message')
+@retrying.retry(stop_max_attempt_number=cfg.max_att, wait_random_min=cfg.w_min, wait_random_max=cfg.w_max)
+def maxvote(message):
+    try:
+        cid = message.chat.id
+        # проверка что сегодня день когда можно голосовать
+        vote_time_check_err = utils.vote_time_check(cid)
+        if vote_time_check_err is None:
+            bot.send_message(cid, utils.maxvote_cmd(cid), parse_mode='HTML')
+        else:
+            bot.reply_to(message, vote_time_check_err)
+    except Exception as e:
+        print('***ERROR: Проблема с командой maxvote***')
+        print('Exception text: ' + str(e))
+
+
+# человек сегодня не обедает
+@bot.message_handler(commands=['minus'])
+@cfg.loglog(command='minus', type='message')
+@retrying.retry(stop_max_attempt_number=cfg.max_att, wait_random_min=cfg.w_min, wait_random_max=cfg.w_max)
+def minus(message):
+    try:
+        cid = message.chat.id
+        uid = message.from_user.id
+        # проверяем что пользователь может голосовать
+        vote_today_err = utils.user_vote_check(cid, uid)
+        if vote_today_err is None:
+            # проверяем, что пользователь не голосовал до минуса
+            user_vote = db.sql_exec(db.sel_user_elec_text, [cid, uid])[0][0]
+            if user_vote == 0:
+                bot.reply_to(message, 'Принято!', parse_mode='HTML')
+                utils.dinner_minus(cid, uid)
+            else:
+                # если был голос до минуса, вычитаем его и показываем новое время
+                utils.dinner_minus(cid, uid, user_vote)
+                bot.reply_to(message, cfg.vote_before_minus_text.format(cfg.show_din_time[cid]), parse_mode='HTML')
+        else:
+            bot.reply_to(message, vote_today_err)
+    except Exception as e:
+        print('***ERROR: Проблема с командой minus***')
+        print('Exception text: ' + str(e))
+
+
+# человек сегодня не обедает (админ)
+@bot.message_handler(commands=['admin_minus'])
+@cfg.loglog(command='admin_minus', type='message')
+@retrying.retry(stop_max_attempt_number=cfg.max_att, wait_random_min=cfg.w_min, wait_random_max=cfg.w_max)
+def admin_minus(message):
+    try:
+        msg = message.text.strip().split()
+        if len(msg) == 2 and msg[1][0] == '@':
+            cid = message.chat.id
+            username = msg[1][1:]
+            # достаём айдишник по нику
+            uid = utils.username_to_id(username)
+            # обработка ошибки если юзер не найден
+            if uid is None:
+                bot.reply_to(message, cfg.err_username_not_found_text, parse_mode='HTML')
+            else:
+                # проверяем что пользователь может голосовать
+                vote_today_err = utils.user_vote_check(cid, uid)
+                if vote_today_err is None:
+                    bot.reply_to(message, 'Принято!', parse_mode='HTML')
+                    utils.dinner_minus(cid, uid)
+                else:
+                    bot.reply_to(message, vote_today_err)
+        else:
+            bot.reply_to(message, cfg.admin_minus_error_text, parse_mode='HTML')
+    except Exception as e:
+        print('***ERROR: Проблема с командой admin_minus***')
+        print('Exception text: ' + str(e))
+
+
+# сбросить сегодняшнее голосование (админ)
+@bot.message_handler(commands=['admin_reset_vote'])
+@cfg.loglog(command='admin_reset_vote', type='message')
+@retrying.retry(stop_max_attempt_number=cfg.max_att, wait_random_min=cfg.w_min, wait_random_max=cfg.w_max)
+def admin_reset_vote(message):
+    try:
+        cid = message.chat.id
+        # проверка что сегодня день когда можно голосовать
+        vote_time_check_err = utils.vote_time_check(cid)
+        if vote_time_check_err is None:
+            utils.vote_params_chat_reset(cid)
+            bot.reply_to(message, cfg.admin_reset_vote_text.format(cfg.show_din_time[cid]), parse_mode='HTML')
+        else:
+            bot.reply_to(message, vote_time_check_err)
+    except Exception as e:
+        print('***ERROR: Проблема с командой admin_reset_vote***')
+        print('Exception text: ' + str(e))
+
+
 @bot.message_handler(content_types=['text'])
 @cfg.loglog(command='text_parser', type='text')
 @retrying.retry(stop_max_attempt_number=cfg.max_att, wait_random_min=cfg.w_min, wait_random_max=cfg.w_max)
 def text_parser(message):
-    week_day = datetime.datetime.today().weekday()
-    # нужно брать дату из даты сообщения
-    hour_msg = time.localtime(message.date).tm_hour
-    # текущее время, может пригодиться
-    # hour_now = time.localtime().tm_hour
-    cid = message.chat.id
-    # user_id = message.from_user.id
-
-    if cid in cfg.subscribed_chats:
+    if message.chat.id in cfg.subscribed_chats:
+        cid = message.chat.id
+        uid = message.from_user.id
         # лол кек ахахаха детектор
-        if utils.getSettings(cid, 'lol_kek') == 1 and tp.lol_kek_detector(message.text) is True:
-            if random.random() >= 0.8:
-                bot.send_sticker(cid, random.choice(cfg.sticker_var))
-                print('Sent!')
+        if utils.getSettings(cid, 'lol_kek') == 1:
+            if tp.lol_kek_detector(message.text) is True: # оптимизация
+                if random.random() >= 0.8:
+                    bot.send_sticker(cid, random.choice(cfg.sticker_var))
+                    print('Sent!')
 
         # голосование за обед
         if utils.getSettings(cid, 'autodetect_vote') == 1:
             din_elec = tp.dinner_election(message.text, cid)
             # ТОЛЬКО ДЛЯ ТЕСТИРОВАНИЯ!!!
             # if din_elec is not False:
-
-            # проверяем что сегодня не выходной и время меньше чем час обеда в этом чате
-            if week_day not in (5, 6) and hour_msg < utils.getSettings(cid, 'elec_end_hour') and din_elec:
-                bot.send_chat_action(cid, 'typing')
-                utils.vote_func(din_elec, bot, message)
-
+            
+            if din_elec:
+                # проверяем что пользователь может голосовать
+                vote_today_err = utils.user_vote_check(cid, uid)
+                if vote_today_err is None:
+                    bot.send_chat_action(cid, 'typing')
+                    utils.vote_func(din_elec, bot, message)
+                else:
+                    bot.reply_to(message, vote_today_err)
 
 # print(cfg.settings[-379501584])
 # print(cfg.show_din_time[-379501584])

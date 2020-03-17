@@ -29,10 +29,11 @@ def dinner_election(msg, cid, manual=False):
     if res == []:
         return False
     else:
-        if abs(int(res[0])) <= cfg.settings[cid]['max_deviation'].seconds // 60:
-            return int(res[0])
-        else:
-            return False
+        return int(res[0])
+        # более не требуется, т.к. есть проверка на maxvote
+        #if abs(int(res[0])) <= cfg.settings[cid]['max_deviation'].seconds // 60:            
+        #else:
+        #    return False
 
 
 # проверяем валидность времени (настройка дефолтного времени обеда)

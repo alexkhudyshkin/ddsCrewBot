@@ -3,7 +3,7 @@
 import sqlite3 as sql
 import config as cfg
 import datetime
-
+            
 ct_text = """CREATE TABLE IF NOT EXISTS PARTICIPANT
             (
             chat_id integer,
@@ -72,10 +72,10 @@ ct_meme_text = """CREATE TABLE IF NOT EXISTS MEME
             );"""
 
 
-ins_settings_copy_text = '''INSERT INTO SETTINGS
+ins_settings_copy_text = """INSERT INTO SETTINGS
                 SELECT ?, default_time_hour, default_time_minute, max_deviation,
                        autodetect_vote_flg, lol_kek_flg, voronkov_flg, pidor_flg, elec_end_hour
-                FROM SETTING WHERE CHAT_ID = ?;'''
+                FROM SETTING WHERE CHAT_ID = ?;"""
 
 ins_lj_participant_election_text = """INSERT INTO ELECTION
             SELECT part.chat_id, part.participant_id,
@@ -173,6 +173,9 @@ sel_max_meme_id_text = """SELECT max(meme_id) FROM MEME
                           WHERE chat_id = ?
                           group by chat_id"""
 
+# проверить что в данном чате кто-то голосовал сегодня
+check_chat_vote_text =  """SELECT MAX(elec_time) FROM ELECTION WHERE chat_id = ? GROUP BY chat_id;"""
+
 is_subscriber_text = """SELECT 1 FROM PARTICIPANT WHERE chat_id = ? and participant_id = ?;"""
 
 has_penalty_text = """SELECT 1 FROM ELECTION WHERE chat_id = ? and participant_id = ? and penalty_time > 0;"""
@@ -202,12 +205,50 @@ update_elec_end_hour_setting_text = """UPDATE SETTINGS
                                     WHERE chat_id = ?;"""
 
 # обновление флаговых настроек
-update_flg_setting_text = "UPDATE SETTINGS SET {} = {} WHERE chat_id = {};"
+update_flg_setting_text = """UPDATE SETTINGS SET {} = {} WHERE chat_id = {};"""
 
 # вытаскиваем настройки по умолчанию в чатах
 select_settings_text = """SELECT chat_id, default_time_hour, default_time_minute,
                   max_deviation, autodetect_vote_flg, lol_kek_flg, voronkov_flg, pidor_flg, elec_end_hour
                   FROM SETTINGS;"""
+
+# вытаскиваем параметры для голосования
+sel_vote_params_text = """SELECT chat_id, SUM(CASE WHEN minus_flg = 0 THEN 1 ELSE 0 END) as subs_cnt, SUM(penalty_time) as penalty_time_sum, SUM(CASE WHEN penalty_time > 0  THEN 1 ELSE 0 END) as penalty_sub_cnt FROM ELECTION GROUP BY chat_id;"""
+
+# вытаскиваем параметры для голосования - для одного чата
+sel_vote_params_chat_text = """SELECT chat_id, SUM(CASE WHEN minus_flg = 0 THEN 1 ELSE 0 END) as subs_cnt, SUM(penalty_time) as penalty_time_sum, SUM(CASE WHEN penalty_time > 0  THEN 1 ELSE 0 END) as penalty_sub_cnt FROM ELECTION WHERE chat_id = ? GROUP BY chat_id;"""
+
+# вытаскиваем штрафы пользователей
+sel_penalty_text = """SELECT part.chat_id, part.participant_username, elec.penalty_time
+            FROM ELECTION as elec JOIN PARTICIPANT as part
+            on (part.chat_id = elec.chat_id and
+            part.participant_id = elec.participant_id);"""
+
+# установить флаг что сабскрайбер сегодня не голосует
+upd_minus_text = """UPDATE ELECTION SET minus_flg = 1, elec_time = 0 WHERE chat_id = ? and participant_id = ?;"""
+
+# вытащить username всех минусовавших сегодня в чате
+sel_minus_text = """SELECT DISTINCT part.participant_username
+            FROM ELECTION as elec JOIN PARTICIPANT as part
+            on (elec.chat_id = ? 
+            and elec.minus_flg = 1 
+            and part.chat_id = elec.chat_id 
+            and part.participant_id = elec.participant_id);"""
+
+# достать id из имени пользователя
+sel_uname_from_id_text = """SELECT DISTINCT participant_id FROM PARTICIPANT WHERE participant_username = ?;"""
+
+# достать id из имени пользователя
+sel_id_from_uname_text = """SELECT DISTINCT participant_username FROM PARTICIPANT WHERE participant_id = ?;"""
+
+# сбросить голосование для чата
+upd_reset_elec_chat_text = """UPDATE ELECTION SET elec_time=0, minus_flg=0 WHERE chat_id = ?;"""
+
+# сбросить голосование для юзера
+upd_reset_elec_user_text = """UPDATE ELECTION SET elec_time=0, minus_flg=0 WHERE chat_id = ? and participant_id = ?;"""
+
+# проверить голос пользователя
+sel_user_elec_text = """SELECT elec_time FROM ELECTION WHERE chat_id = ? and participant_id = ?;"""
 
 
 # создать таблицу
@@ -354,6 +395,8 @@ def insert_into_participants(chat_id, user):
     # обновляем таблицу голосующих за обед
     cursor.execute(ins_lj_participant_election_text)
     db.commit()
+    # обновляем список голосующих чатов для использования ботом
+    cfg.chat_voters_transform(sql_exec(sel_chats_election_text, []))
     return 1
 
 
@@ -366,6 +409,8 @@ def delete_from_participants(chat_id, user_id):
     # удаляем участника из таблицы голосующих за обед
     cursor.execute(del_election_text, [chat_id, user_id])
     db.commit()
+    # обновляем список голосующих чатов для использования ботом
+    cfg.chat_voters_transform(sql_exec(sel_chats_election_text, []))    
 
 
 # вставить данные в таблицу participant and election
@@ -397,6 +442,12 @@ def delete_from_chatID(chat_id):
     cfg.subscribed_chats_transform(sql_exec(sel_all_chatID_text, []))
 
 
+# распаковка list of tuples в list of values
+# связано с проблемой sql_exec - если пусто возврат [], иначе [('khudyshkin',), ('CauseloveM',)]
+def normalize_output(array):
+    return [e[0] for e in array]
+
+
 # создать таблицы, если их нет
 create_table()
 
@@ -413,8 +464,9 @@ if max_id_rk[0][0] is None:
 cfg.max_id_rk = int(max_id_rk[0][0]) + 1
 
 # инициируем настройки в голосующих чатах
-chat_voters = sql_exec(sel_chats_election_text, [])
-[default_settings(chat[0]) for chat in chat_voters]
+cfg.chat_voters = normalize_output(sql_exec(sel_chats_election_text, []))
+[default_settings(chat) for chat in cfg.chat_voters]
+
 # запоминаем настройки
 cfg.settings = select_settings()
 

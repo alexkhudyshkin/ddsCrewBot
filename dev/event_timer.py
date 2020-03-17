@@ -223,14 +223,16 @@ def one_hour_timer(bot):
     timer.start()
 
     if to_show == 1:
-        # будние дни
-        if time_now.weekday() not in (5, 6):
+        # будние + непраздничные дни
+        if time_now.weekday() not in (5, 6) and time_now not in cfg.ru_holidays:
             for chats in cfg.subscribed_chats:
                 chatSettings = utils.getSettings(chats)
-                # доброе утро и вызвать pidora
-                if str(time_now.time().hour) == '9' and chatSettings['pidor'] == 1:
+                # доброе утро + показать maxvote + вызвать pidora
+                if str(time_now.time().hour) == '9':
                     send_msg(bot, rnd.choice(cfg.gm_text), chats)
-                    send_msg(bot, '/pidor@SublimeBot', chats)
+                    send_msg(bot, utils.maxvote_cmd(chats), chats)
+                    if chatSettings['pidor'] == 1:
+                        send_msg(bot, '/pidor@SublimeBot', chats)
 
                 # напоминание о голосовании за обед
                 if time_now.time().hour == chatSettings['elec_end_hour'] - 1:
@@ -316,3 +318,6 @@ def one_hour_timer(bot):
 
         # обнуляем время голосования в боте
         utils.upd_din_time()
+        # пересчитываем ограничения на голосование
+        utils.vote_params_reset()
+ 
